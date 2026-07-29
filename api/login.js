@@ -10,7 +10,7 @@ export default async function handler(req, res) {
 
   // 2. POST Request: Verify user-inputted password
   if (req.method === 'POST') {
-    const { password } = req.body;
+    const { password } = req.body || {};
     
     if (!serverPassword) {
       // If no password is configured, login is always successful
