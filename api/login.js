@@ -1,7 +1,7 @@
 // /api/login.js (Vercel Serverless Function for Secure Password Verification)
 
 export default async function handler(req, res) {
-  const serverPassword = process.env.DASHBOARD_PASSWORD;
+  const serverPassword = process.env.DASHBOARD_PASSWORD || "emnet0420";
 
   // 1. GET Request: Check if password protection is enabled on the server
   if (req.method === 'GET') {

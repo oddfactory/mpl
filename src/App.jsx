@@ -57,7 +57,7 @@ const formatPercent = (val) => {
 export default function App() {
   // Read environment variables
   const ENV_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-  const ENV_PASSWORD = import.meta.env.VITE_DASHBOARD_PASSWORD || "";
+  const ENV_PASSWORD = import.meta.env.VITE_DASHBOARD_PASSWORD || "emnet0420";
 
   // Theme State
   const [darkMode, setDarkMode] = useState(false);
