@@ -99,7 +99,7 @@ export default function App() {
       });
       
       if (res.ok) {
-        sessionStorage.setItem('dashboard_unlocked', 'true');
+        localStorage.setItem('dashboard_unlocked', 'true');
         setUnlocked(true);
         setPasswordError(false);
         return;
@@ -110,7 +110,7 @@ export default function App() {
 
     // 2. Local fallback check
     if (ENV_PASSWORD && passwordInput === ENV_PASSWORD) {
-      sessionStorage.setItem('dashboard_unlocked', 'true');
+      localStorage.setItem('dashboard_unlocked', 'true');
       setUnlocked(true);
       setPasswordError(false);
     } else {
@@ -186,7 +186,7 @@ export default function App() {
   // Initialize: Load Theme & API Key from LocalStorage
   useEffect(() => {
     // Check if session is already unlocked
-    const sessionUnlocked = sessionStorage.getItem('dashboard_unlocked') === 'true';
+    const sessionUnlocked = localStorage.getItem('dashboard_unlocked') === 'true';
     if (sessionUnlocked) {
       setUnlocked(true);
     }
