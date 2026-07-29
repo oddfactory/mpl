@@ -83,6 +83,7 @@ export default function App() {
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [detectedModel, setDetectedModel] = useState({ modelName: 'gemini-1.5-flash', apiVersion: 'v1' });
+  const [isProxyActive, setIsProxyActive] = useState(false);
 
   // Handle Lock Screen login
   const handleLogin = (e) => {
@@ -178,13 +179,33 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
 
-    // API Key (Environment key takes precedence, falls back to localStorage)
-    const savedKey = ENV_API_KEY || localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-      setApiKey(savedKey);
-      setApiKeySaved(true);
-      discoverModel(savedKey);
-    }
+    // Check Vercel API Proxy configuration status
+    const checkAPIProxy = async () => {
+      try {
+        const res = await fetch('/api/gemini');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.configured) {
+            setIsProxyActive(true);
+            setApiKeySaved(true);
+            setDetectedModel({ modelName: 'Server Proxy', apiVersion: 'v1' });
+            return; // Skip loading local keys
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check server proxy configuration:", e);
+      }
+
+      // API Key (Environment key takes precedence, falls back to localStorage)
+      const savedKey = ENV_API_KEY || localStorage.getItem('gemini_api_key');
+      if (savedKey) {
+        setApiKey(savedKey);
+        setApiKeySaved(true);
+        discoverModel(savedKey);
+      }
+    };
+
+    checkAPIProxy();
 
     // Load CSV Data
     fetchData();
@@ -615,7 +636,7 @@ export default function App() {
     }
 
     try {
-      if (apiKeySaved && apiKey) {
+      if (apiKeySaved && (isProxyActive || apiKey)) {
         const resultText = await callGeminiAPI(apiKey, prompt);
         setAiReports(prev => ({ ...prev, [sectionId]: resultText }));
       } else {
@@ -674,7 +695,7 @@ export default function App() {
     `;
 
     try {
-      if (apiKeySaved && apiKey) {
+      if (apiKeySaved && (isProxyActive || apiKey)) {
         const aiText = await callGeminiAPI(apiKey, prompt);
         setChatMessages(prev => [...prev, { id: Date.now() + 1, sender: "ai", text: aiText }]);
       } else {
@@ -698,27 +719,48 @@ export default function App() {
 
   // REST API Call helper
   const callGeminiAPI = async (key, promptText) => {
-    const url = `https://generativelanguage.googleapis.com/${detectedModel.apiVersion}/models/${detectedModel.modelName}:generateContent?key=${key}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
+    let url;
+    let bodyData;
+
+    if (isProxyActive) {
+      // Secure Vercel Serverless Function Proxy Call
+      url = '/api/gemini';
+      bodyData = { prompt: promptText };
+    } else {
+      // Standard Direct Client-side REST Call (using local API Key)
+      url = `https://generativelanguage.googleapis.com/${detectedModel.apiVersion}/models/${detectedModel.modelName}:generateContent?key=${key}`;
+      bodyData = {
         contents: [
           {
             parts: [{ text: promptText }]
           }
         ]
-      })
+      };
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(bodyData)
     });
 
     if (!response.ok) {
       const errRes = await response.json();
-      throw new Error(errRes.error?.message || 'Gemini API 호출 중 원인을 알 수 없는 에러가 발생했습니다.');
+      throw new Error(errRes.error?.message || errRes.error || 'Gemini API 호출 중 에러가 발생했습니다.');
     }
 
     const resJson = await response.json();
+
+    if (isProxyActive) {
+      // Set server-resolved model dynamically
+      if (resJson.model) {
+        setDetectedModel({ modelName: resJson.model, apiVersion: 'v1 (Server Proxy)' });
+      }
+      return resJson.text;
+    }
+
     return resJson.candidates[0].content.parts[0].text;
   };
 
@@ -1148,7 +1190,17 @@ export default function App() {
 
           {/* Bottom fixed Gemini API Key block */}
           <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 space-y-2.5">
-            {ENV_API_KEY ? (
+            {isProxyActive ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                  <Check size={14} className="stroke-[2.5]" />
+                  <span className="text-xs font-bold">Gemini API: 서버 보안 연동 완료</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal font-sans">
+                  Vercel 서버리스 프록시를 통해 API Key가 철저히 보호되고 있으며, AI 분석 기능을 즉시 사용할 수 있습니다.
+                </p>
+              </div>
+            ) : ENV_API_KEY ? (
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
                   <Check size={14} className="stroke-[2.5]" />
