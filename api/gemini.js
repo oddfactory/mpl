@@ -1,7 +1,11 @@
-// /api/gemini.js (Vercel Serverless Function Proxy with Self-Healing Auto-Discovery)
+// /api/gemini.js (Vercel Serverless Function Proxy with Cascading Retry Fallback)
 
-// Helper: Query available models for the user's API Key dynamically
-async function discoverModelName(apiKey) {
+// Helper: Query all available models for the user's API Key dynamically
+async function discoverCandidates(apiKey) {
+  const defaultList = [
+    { modelName: 'gemini-1.5-flash', apiVersion: 'v1' }
+  ];
+  
   try {
     // 1. Try v1 API first
     let res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
@@ -22,18 +26,22 @@ async function discoverModelName(apiKey) {
           m.supportedGenerationMethods.includes('generateContent')
         );
 
-        // Look for flash models first, sorted descending to prefer newer versions (e.g. 2.5, 2.0, 1.5)
+        // Filter and sort flash models (newer first)
         const flashCandidates = candidates.filter(m => m.name.toLowerCase().includes('flash'));
         if (flashCandidates.length > 0) {
           flashCandidates.sort((a, b) => b.name.localeCompare(a.name));
-          const name = flashCandidates[0].name.replace('models/', '');
-          return { modelName: name, apiVersion };
+          return flashCandidates.map(m => ({
+            modelName: m.name.replace('models/', ''),
+            apiVersion
+          }));
         }
 
         // Fallback to any model that supports generateContent
         if (candidates.length > 0) {
-          const name = candidates[0].name.replace('models/', '');
-          return { modelName: name, apiVersion };
+          return candidates.map(m => ({
+            modelName: m.name.replace('models/', ''),
+            apiVersion
+          }));
         }
       }
     }
@@ -41,8 +49,7 @@ async function discoverModelName(apiKey) {
     console.error("Auto-discovery failed inside serverless proxy:", e);
   }
 
-  // Fallback defaults if discovery fails completely
-  return { modelName: 'gemini-1.5-flash', apiVersion: 'v1' };
+  return defaultList;
 }
 
 export default async function handler(req, res) {
@@ -65,31 +72,52 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Discover the best model name and apiVersion for the key dynamically
-    const { modelName, apiVersion } = await discoverModelName(apiKey);
+    // Get candidate list sorted by preference
+    const candidates = await discoverCandidates(apiKey);
     
-    const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }]
-      })
-    });
+    let response;
+    let data;
+    let successfulModel;
 
-    const data = await response.json();
+    // Loop through candidates and retry on failure (high demand, rate limit, etc.)
+    for (let i = 0; i < candidates.length; i++) {
+      const { modelName, apiVersion } = candidates[i];
+      console.log(`Trying model [${i + 1}/${candidates.length}]: ${modelName} (${apiVersion})`);
+      
+      const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
+      
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }]
+          })
+        });
 
-    if (!response.ok) {
-      return res.status(response.status).json({ 
-        error: data.error?.message || 'Gemini API 호출 중 에러가 발생했습니다.' 
+        data = await response.json();
+
+        if (response.ok) {
+          successfulModel = modelName;
+          break; // Success! Exit loop
+        }
+
+        console.warn(`Model ${modelName} failed with error: ${data.error?.message || 'Unknown error'}. Trying next candidate...`);
+      } catch (err) {
+        console.error(`Request to ${modelName} crashed:`, err);
+      }
+    }
+
+    if (!response || !response.ok) {
+      return res.status(response ? response.status : 500).json({ 
+        error: data?.error?.message || 'Gemini API 모든 모델이 현재 과부하 상태이거나 호출에 실패했습니다.' 
       });
     }
 
     const replyText = data.candidates[0].content.parts[0].text;
-    return res.status(200).json({ text: replyText, model: modelName });
+    return res.status(200).json({ text: replyText, model: successfulModel });
   } catch (error) {
     console.error("Vercel Proxy Error:", error);
     return res.status(500).json({ error: error.message });
