@@ -63,7 +63,8 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
 
   // Lock Screen States
-  const [unlocked, setUnlocked] = useState(!ENV_PASSWORD);
+  const [unlocked, setUnlocked] = useState(true); // Default to true, will lock in useEffect if required
+  const [isPasswordRequired, setIsPasswordRequired] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState(false);
 
@@ -85,10 +86,30 @@ export default function App() {
   const [detectedModel, setDetectedModel] = useState({ modelName: 'gemini-1.5-flash', apiVersion: 'v1' });
   const [isProxyActive, setIsProxyActive] = useState(false);
 
-  // Handle Lock Screen login
-  const handleLogin = (e) => {
+  // Handle Lock Screen login (Backend dynamic login with Local fallback)
+  const handleLogin = async (e) => {
     if (e) e.preventDefault();
-    if (passwordInput === ENV_PASSWORD) {
+    
+    try {
+      // 1. Try Vercel Serverless Function first
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: passwordInput })
+      });
+      
+      if (res.ok) {
+        sessionStorage.setItem('dashboard_unlocked', 'true');
+        setUnlocked(true);
+        setPasswordError(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("Server login endpoint failed, falling back to local check:", err);
+    }
+
+    // 2. Local fallback check
+    if (ENV_PASSWORD && passwordInput === ENV_PASSWORD) {
       sessionStorage.setItem('dashboard_unlocked', 'true');
       setUnlocked(true);
       setPasswordError(false);
@@ -165,10 +186,37 @@ export default function App() {
   // Initialize: Load Theme & API Key from LocalStorage
   useEffect(() => {
     // Check if session is already unlocked
-    if (ENV_PASSWORD) {
-      const isUnlocked = sessionStorage.getItem('dashboard_unlocked') === 'true';
-      setUnlocked(isUnlocked);
+    const sessionUnlocked = sessionStorage.getItem('dashboard_unlocked') === 'true';
+    if (sessionUnlocked) {
+      setUnlocked(true);
     }
+
+    // Check Vercel Password configuration status
+    const checkPasswordConfig = async () => {
+      try {
+        const res = await fetch('/api/login');
+        if (res.ok) {
+          const data = await res.json();
+          setIsPasswordRequired(data.required);
+          if (data.required && !sessionUnlocked) {
+            setUnlocked(false);
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to check server password configuration:", e);
+      }
+
+      // Local fallback configuration check
+      if (ENV_PASSWORD && !sessionUnlocked) {
+        setIsPasswordRequired(true);
+        setUnlocked(false);
+      } else {
+        setUnlocked(true);
+      }
+    };
+
+    checkPasswordConfig();
 
     // Theme
     const isDark = localStorage.getItem('theme') === 'dark';
@@ -961,7 +1009,7 @@ export default function App() {
     return activeList.slice(start, start + ITEMS_PER_PAGE);
   }, [activeList, currentPage]);
 
-  if (ENV_PASSWORD && !unlocked) {
+  if (isPasswordRequired && !unlocked) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans p-4 transition-colors duration-300">
         <div className="bg-white dark:bg-[#0c0c0f] border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-6 text-center">
