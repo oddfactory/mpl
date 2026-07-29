@@ -760,9 +760,12 @@ export default function App() {
     }
   };
 
-  // Scroll Chat to bottom
+  // Scroll Chat to bottom (guaranteed after DOM rendering)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const timer = setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 80);
+    return () => clearTimeout(timer);
   }, [chatMessages, chatLoading]);
 
   // REST API Call helper
@@ -1011,7 +1014,7 @@ export default function App() {
 
   if (isPasswordRequired && !unlocked) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans p-4 transition-colors duration-300">
+      <div className="flex items-center justify-center h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 font-sans p-4 transition-colors duration-300">
         <div className="bg-white dark:bg-[#0c0c0f] border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-6 text-center">
           <div className="mx-auto bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-4 rounded-full h-16 w-16 flex items-center justify-center">
             <Key className="stroke-[2.5]" size={28} />
@@ -1054,10 +1057,10 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 transition-colors duration-300 font-sans">
+    <div className="flex flex-col h-screen overflow-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 transition-colors duration-300 font-sans">
       
       {/* Top Header Row */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] z-20">
+      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] z-20 shrink-0">
         <div className="flex items-center gap-2.5">
           <div className="bg-blue-600 text-white p-2 rounded-lg flex items-center justify-center">
             <DollarSign size={20} className="stroke-[2.5]" />
@@ -1092,12 +1095,12 @@ export default function App() {
       </header>
 
       {/* Main Body Grid: 3 Column Layout (20% - 55% - 25%) */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden h-full max-h-full min-h-0">
         
         {/* ========================================================
             1. LEFT PANEL: MENU & FILTERS (20% -> lg:col-span-3 또는 col-span-2)
             ======================================================== */}
-        <aside className="lg:col-span-3 xl:col-span-2 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] flex flex-col h-full overflow-y-auto min-h-[calc(100vh-73px)] justify-between">
+        <aside className="lg:col-span-3 xl:col-span-2 border-r border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] flex flex-col h-full overflow-y-auto max-h-full justify-between">
           
           <div className="p-4 space-y-6">
             
@@ -1304,7 +1307,7 @@ export default function App() {
         {/* ========================================================
             2. CENTER PANEL: MAIN DASHBOARD PORTAL (55% -> lg:col-span-6 또는 col-span-7)
             ======================================================== */}
-        <main className="lg:col-span-6 xl:col-span-7 p-6 space-y-6 overflow-y-auto h-full max-h-[calc(100vh-73px)] bg-zinc-50 dark:bg-[#09090b]">
+        <main className="lg:col-span-6 xl:col-span-7 p-6 space-y-6 overflow-y-auto h-full max-h-full bg-zinc-50 dark:bg-[#09090b]">
           
           {loadingData ? (
             <div className="flex flex-col items-center justify-center min-h-[400px] space-y-3">
@@ -1846,7 +1849,7 @@ export default function App() {
         {/* ========================================================
             3. RIGHT PANEL: AI CHATBOT SIDEBAR (25% -> lg:col-span-3 또는 col-span-3)
             ======================================================== */}
-        <aside className="lg:col-span-3 xl:col-span-3 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] flex flex-col h-full overflow-hidden min-h-[calc(100vh-73px)] justify-between">
+        <aside className="lg:col-span-3 xl:col-span-3 border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#0c0c0f] flex flex-col h-full overflow-hidden max-h-full justify-between">
           
           {/* Chat Header */}
           <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/10">
@@ -1886,7 +1889,7 @@ export default function App() {
           </div>
 
           {/* Chat message history list */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-zinc-50/20 dark:bg-zinc-950/20">
+          <div className="flex-1 p-4 overflow-y-auto min-h-0 space-y-3.5 bg-zinc-50/20 dark:bg-zinc-950/20">
             {chatMessages.map(msg => (
               <div
                 key={msg.id}
