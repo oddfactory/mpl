@@ -55,8 +55,17 @@ const formatPercent = (val) => {
 };
 
 export default function App() {
+  // Read environment variables
+  const ENV_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
+  const ENV_PASSWORD = import.meta.env.VITE_DASHBOARD_PASSWORD || "";
+
   // Theme State
   const [darkMode, setDarkMode] = useState(false);
+
+  // Lock Screen States
+  const [unlocked, setUnlocked] = useState(!ENV_PASSWORD);
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState(false);
 
   // Data States
   const [rawData, setRawData] = useState([]);
@@ -74,6 +83,18 @@ export default function App() {
   const [apiKey, setApiKey] = useState("");
   const [apiKeySaved, setApiKeySaved] = useState(false);
   const [detectedModel, setDetectedModel] = useState({ modelName: 'gemini-1.5-flash', apiVersion: 'v1' });
+
+  // Handle Lock Screen login
+  const handleLogin = (e) => {
+    if (e) e.preventDefault();
+    if (passwordInput === ENV_PASSWORD) {
+      sessionStorage.setItem('dashboard_unlocked', 'true');
+      setUnlocked(true);
+      setPasswordError(false);
+    } else {
+      setPasswordError(true);
+    }
+  };
 
   // Self-healing: Query available models for the user's API Key
   const discoverModel = async (key) => {
@@ -142,6 +163,12 @@ export default function App() {
 
   // Initialize: Load Theme & API Key from LocalStorage
   useEffect(() => {
+    // Check if session is already unlocked
+    if (ENV_PASSWORD) {
+      const isUnlocked = sessionStorage.getItem('dashboard_unlocked') === 'true';
+      setUnlocked(isUnlocked);
+    }
+
     // Theme
     const isDark = localStorage.getItem('theme') === 'dark';
     setDarkMode(isDark);
@@ -151,8 +178,8 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
 
-    // API Key
-    const savedKey = localStorage.getItem('gemini_api_key');
+    // API Key (Environment key takes precedence, falls back to localStorage)
+    const savedKey = ENV_API_KEY || localStorage.getItem('gemini_api_key');
     if (savedKey) {
       setApiKey(savedKey);
       setApiKeySaved(true);
@@ -161,7 +188,7 @@ export default function App() {
 
     // Load CSV Data
     fetchData();
-  }, []);
+  }, [ENV_API_KEY, ENV_PASSWORD]);
 
   // Fetch and Parse CSV Data
   const fetchData = async () => {
@@ -892,6 +919,50 @@ export default function App() {
     return activeList.slice(start, start + ITEMS_PER_PAGE);
   }, [activeList, currentPage]);
 
+  if (ENV_PASSWORD && !unlocked) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans p-4 transition-colors duration-300">
+        <div className="bg-white dark:bg-[#0c0c0f] border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-xl max-w-sm w-full p-6 space-y-6 text-center">
+          <div className="mx-auto bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-4 rounded-full h-16 w-16 flex items-center justify-center">
+            <Key className="stroke-[2.5]" size={28} />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold tracking-tight text-zinc-900 dark:text-zinc-50">경영 대시보드 보안 잠금</h2>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">보안이 활성화되었습니다. 임원진 전용 비밀번호를 입력해주세요.</p>
+          </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                placeholder="비밀번호 입력..."
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  setPasswordError(false);
+                }}
+                className={`w-full px-3 py-2 text-xs border rounded-lg bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 focus:outline-none transition-all ${
+                  passwordError 
+                    ? 'border-rose-500 focus:ring-1 focus:ring-rose-500' 
+                    : 'border-zinc-200 dark:border-zinc-800/85 focus:ring-1 focus:ring-blue-500'
+                }`}
+              />
+              {passwordError && (
+                <p className="text-[10px] text-rose-500 text-left mt-1.5 font-medium">비밀번호가 올바르지 않습니다.</p>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={!passwordInput.trim()}
+              className="w-full py-2 text-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg shadow-sm transition-all"
+            >
+              대시보드 잠금 해제
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 transition-colors duration-300 font-sans">
       
@@ -1077,41 +1148,55 @@ export default function App() {
 
           {/* Bottom fixed Gemini API Key block */}
           <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/40 space-y-2.5">
-            <div className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
-              <Key size={14} className="text-blue-500" />
-              <label className="text-xs font-bold">Gemini API Key 설정</label>
-            </div>
-            
-            <div className="space-y-2">
-              <input
-                type="password"
-                placeholder={apiKeySaved ? "••••••••••••••••••••••••" : "API Key 입력..."}
-                value={apiKey}
-                disabled={apiKeySaved}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-zinc-200 dark:border-zinc-800 rounded-md bg-white dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
-              />
-              
-              {apiKeySaved ? (
-                <button
-                  onClick={clearApiKey}
-                  className="w-full py-1 text-center text-xs font-medium text-rose-600 bg-rose-50 dark:bg-rose-900/10 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 rounded-md hover:bg-rose-100 dark:hover:bg-rose-900/20 transition-all"
-                >
-                  API Key 변경
-                </button>
-              ) : (
-                <button
-                  onClick={saveApiKey}
-                  disabled={!apiKey.trim()}
-                  className="w-full py-1 text-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-all"
-                >
-                  저장
-                </button>
-              )}
-            </div>
-            <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">
-              키를 저장하면 Gemini 모델을 통해 실제 대화 분석 및 심층 리포트를 받아볼 수 있습니다.
-            </p>
+            {ENV_API_KEY ? (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                  <Check size={14} className="stroke-[2.5]" />
+                  <span className="text-xs font-bold">Gemini API: Env 연동 완료</span>
+                </div>
+                <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal font-sans">
+                  환경 변수에서 Gemini API 키를 로드하여 대시보드 실시간 AI 분석 기능이 활성화되었습니다.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5 text-zinc-700 dark:text-zinc-300">
+                  <Key size={14} className="text-blue-500" />
+                  <label className="text-xs font-bold">Gemini API Key 설정</label>
+                </div>
+                
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    placeholder={apiKeySaved ? "••••••••••••••••••••••••" : "API Key 입력..."}
+                    value={apiKey}
+                    disabled={apiKeySaved}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs border border-zinc-200 dark:border-zinc-800 rounded-md bg-white dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 disabled:opacity-60 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+                  />
+                  
+                  {apiKeySaved ? (
+                    <button
+                      onClick={clearApiKey}
+                      className="w-full py-1 text-center text-xs font-medium text-rose-600 bg-rose-50 dark:bg-rose-900/10 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 rounded-md hover:bg-rose-100 dark:hover:bg-rose-900/20 transition-all"
+                    >
+                      API Key 변경
+                    </button>
+                  ) : (
+                    <button
+                      onClick={saveApiKey}
+                      disabled={!apiKey.trim()}
+                      className="w-full py-1 text-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md shadow-sm transition-all"
+                    >
+                      저장
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-normal">
+                  키를 저장하면 Gemini 모델을 통해 실제 대화 분석 및 심층 리포트를 받아볼 수 있습니다.
+                </p>
+              </>
+            )}
           </div>
 
         </aside>
