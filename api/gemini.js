@@ -1,4 +1,49 @@
-// /api/gemini.js (Vercel Serverless Function Proxy)
+// /api/gemini.js (Vercel Serverless Function Proxy with Self-Healing Auto-Discovery)
+
+// Helper: Query available models for the user's API Key dynamically
+async function discoverModelName(apiKey) {
+  try {
+    // 1. Try v1 API first
+    let res = await fetch(`https://generativelanguage.googleapis.com/v1/models?key=${apiKey}`);
+    let apiVersion = 'v1';
+    
+    if (!res.ok) {
+      // 2. Try v1beta API fallback
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      apiVersion = 'v1beta';
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.models && Array.isArray(data.models)) {
+        // Filter models that support generateContent
+        const candidates = data.models.filter(m => 
+          m.supportedGenerationMethods && 
+          m.supportedGenerationMethods.includes('generateContent')
+        );
+
+        // Look for flash models first, sorted descending to prefer newer versions (e.g. 2.5, 2.0, 1.5)
+        const flashCandidates = candidates.filter(m => m.name.toLowerCase().includes('flash'));
+        if (flashCandidates.length > 0) {
+          flashCandidates.sort((a, b) => b.name.localeCompare(a.name));
+          const name = flashCandidates[0].name.replace('models/', '');
+          return { modelName: name, apiVersion };
+        }
+
+        // Fallback to any model that supports generateContent
+        if (candidates.length > 0) {
+          const name = candidates[0].name.replace('models/', '');
+          return { modelName: name, apiVersion };
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Auto-discovery failed inside serverless proxy:", e);
+  }
+
+  // Fallback defaults if discovery fails completely
+  return { modelName: 'gemini-1.5-flash', apiVersion: 'v1' };
+}
 
 export default async function handler(req, res) {
   // 1. GET Request: Check if Gemini API key is configured on the server
@@ -20,11 +65,12 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Try using gemini-3.1-flash as preferred version
-    let modelName = 'gemini-3.1-flash';
-    let url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
+    // Discover the best model name and apiVersion for the key dynamically
+    const { modelName, apiVersion } = await discoverModelName(apiKey);
     
-    let response = await fetch(url, {
+    const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${modelName}:generateContent?key=${apiKey}`;
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -34,25 +80,7 @@ export default async function handler(req, res) {
       })
     });
 
-    let data = await response.json();
-
-    // Fallback: If gemini-3.1-flash is not available/supported, fall back to stable gemini-1.5-flash
-    if (!response.ok && data.error?.message && 
-        (data.error.message.includes('not found') || data.error.message.includes('not supported'))) {
-      modelName = 'gemini-1.5-flash';
-      url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
-      
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      });
-      data = await response.json();
-    }
+    const data = await response.json();
 
     if (!response.ok) {
       return res.status(response.status).json({ 
